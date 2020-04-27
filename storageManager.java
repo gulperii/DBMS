@@ -4,14 +4,15 @@ import java.io.File;
 import java.io.RandomAccessFile;
 import java.util.*;
 
-//TODO: DONT PUT N TO LAST LİNE
+
 public class storageManager {
     public static HashSet<String> types = new HashSet<>();
-    // {Cat:{234 : <a,b,c>}}
     public static HashMap<String, HashSet<Integer>> typesAndRecords = new HashMap<String, HashSet<Integer>>();
 
+    public static TreeSet<Integer> allrecs = new TreeSet<Integer>();
+
     public static void main(String[] args) throws IOException {
-        //TODO: ÖNCEDEN VARMIŞŞŞŞŞ
+        //TODO: ÖNCEDEN VARMIŞŞŞŞŞ SYSCAT VE DATAFILE
         Constants.INPUT_FILE = args[0];
         Constants.OUTPUT_FILE = args[1];
 
@@ -24,11 +25,6 @@ public class storageManager {
         outputFile.createNewFile();
 
         int commandCount = getCommands(commandList);
-        for (int i = 0; i < Constants.FILE_COUNT; i++) {
-            File file = new File("DataFile" + i);
-            file.createNewFile();
-        }
-
         executeCommands(commandList, syscat, outputFile);
 
 
@@ -87,21 +83,23 @@ public class storageManager {
                 } else if (methodName.equalsIgnoreCase("updaterecord")) {
                     updateRecord(commandList.get(i).get(methodName));
                 } else if (methodName.equalsIgnoreCase("searchrecord")) {
-                    searchForRecord(commandList.get(i).get(methodName));
+                    searchForRecord(commandList.get(i).get(methodName), output);
                 } else if (methodName.equalsIgnoreCase("listrecord")) {
-                    listAllRecords(commandList.get(i).get(methodName));
+                    listAllRecords(commandList.get(i).get(methodName), output);
                 } else {
                     System.out.println("Wrong Operation");
                 }
             }
         }
+        RandomAccessFile rd = new RandomAccessFile(output, "rw");
+        rd.setLength(rd.length() - ("\n".getBytes()).length);
+
 
     }
 
 
     public static void createType(String[] params, File syscat) throws IOException {
         if (!types.contains(params[0])) {
-            types.add(params[0]);
             String typeSignature = "";
             for (int i = 0; i < params.length; i++) {
                 if (i == 1) {
@@ -134,6 +132,7 @@ public class storageManager {
             file.close();
             HashSet<Integer> recordIds = new HashSet<>();
             typesAndRecords.put(params[0], recordIds);
+            types.add(params[0]);
 
 
         } else {
@@ -188,7 +187,7 @@ public class storageManager {
         typesAndRecords.remove(typeName);
         for (Integer recordId : records) {
             int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
-            File file = new File("File" + fileNum);
+            File file = new File("DataFile" + fileNum);
             RandomAccessFile datafile = new RandomAccessFile(file, "rw");
             int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
             int pageId = modId / Constants.RECORD_PER_PAGE;
@@ -248,7 +247,7 @@ public class storageManager {
         recordSignature += Constants.RECORD_DELIMETER;
 
         int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
-        File file = new File("File" + fileNum);
+        File file = new File("DataFile" + fileNum);
         RandomAccessFile datafile = new RandomAccessFile(file, "rw");
         int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
         int pageId = modId / Constants.RECORD_PER_PAGE;
@@ -259,21 +258,143 @@ public class storageManager {
         datafile.write(recordBytes);
         datafile.close();
         typesAndRecords.get(params[0]).add(recordId);
+        allrecs.add(recordId);
 
 
     }
 
-    public static void deleteRecord(String[] strings) {
+    public static void deleteRecord(String[] strings) throws IOException {
+        int recordId = Integer.valueOf(strings[1]);
+        int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+        File file = new File("DataFile" + fileNum);
+        RandomAccessFile datafile = new RandomAccessFile(file, "rw");
+        int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+        int pageId = modId / Constants.RECORD_PER_PAGE;
+        int pageModId = modId % Constants.RECORD_PER_PAGE;
+        int cursor2 = pageId * Constants.PAGE_SIZE + pageModId * Constants.RECORD_SIZE + 11;
+        byte[] emptyMarker = "0".getBytes(); // 0 means empty
+        datafile.seek(cursor2);
+        datafile.write(emptyMarker);
+        typesAndRecords.get(strings[0]).remove(recordId);
+        allrecs.remove(recordId);
+
 
     }
 
-    public static void updateRecord(String[] strings) {
+    public static void updateRecord(String[] params) throws IOException {
+        if (!types.contains(params[0])) {
+            return;
+        }
+        int recordId = Integer.valueOf(params[1]);
+        String recordSignature = "";
+        for (int i = 1; i < params.length; i++) {
+            String str = params[i];
+            for (int j = str.length(); j < Constants.FIELD_VAL; j++) {
+                str += Constants.FILLER_DELIMETER;
+
+            }
+            recordSignature += str + Constants.FIELD_DELIMETER;
+            if (i == 1) {
+                recordSignature += "1" + Constants.FIELD_DELIMETER;
+            }
+
+        }
+
+        for (int i = params.length; i < Constants.NUM_OF_FIELDS + 1; i++) {
+            recordSignature += "**********";
+            if (i != Constants.NUM_OF_FIELDS) {
+                recordSignature += Constants.FIELD_DELIMETER;
+            }
+        }
+        recordSignature += Constants.RECORD_DELIMETER;
+
+        int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+        File file = new File("DataFile" + fileNum);
+        RandomAccessFile datafile = new RandomAccessFile(file, "rw");
+        int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+        int pageId = modId / Constants.RECORD_PER_PAGE;
+        int pageModId = modId % Constants.RECORD_PER_PAGE;
+        int cursor = pageId * Constants.PAGE_SIZE + pageModId * Constants.RECORD_SIZE;
+        datafile.seek(cursor);
+        byte[] recordBytes = recordSignature.getBytes();
+        datafile.write(recordBytes);
+        datafile.close();
+
+
     }
 
-    public static void searchForRecord(String[] strings) {
+    public static void searchForRecord(String[] strings, File output) throws IOException {
+        int recordId = Integer.valueOf(strings[1]);
+        int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+        File file = new File("DataFile" + fileNum);
+        RandomAccessFile datafile = new RandomAccessFile(file, "rw");
+        int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+        int pageId = modId / Constants.RECORD_PER_PAGE;
+        int pageModId = modId % Constants.RECORD_PER_PAGE;
+        int cursor = pageId * Constants.PAGE_SIZE + pageModId * Constants.RECORD_SIZE;
+        byte[] recordParams = new byte[Constants.RECORD_SIZE];
+        datafile.seek(cursor);
+        datafile.read(recordParams);
+
+        FileOutputStream outputStream = new FileOutputStream(output, true);
+        String recordSignature = new String(recordParams, "UTF-8"); // for UTF-8 encoding
+        String[] splittedParams = recordSignature.split(Constants.FIELD_DELIMETER);
+        String toWrite = "";
+        for (int i = 0;i <splittedParams.length;i++) {
+            if(i!=1) {
+                String str = splittedParams[i];
+                if (!str.equals("**********")) {
+                    str = str.replace(Constants.FILLER_DELIMETER, "");
+                    str = str.replace(Constants.RECORD_DELIMETER, "");
+                    toWrite += str + " ";
+
+                }
+            }
+        }
+        toWrite = toWrite.substring(0, toWrite.length() - 1);
+        byte[] toBytes = toWrite.getBytes();
+        outputStream.write(toBytes);
+        outputStream.write("\n".getBytes());
+        outputStream.close();
+
     }
 
-    public static void listAllRecords(String[] strings) {
+    public static void listAllRecords(String[] strings, File output) throws IOException {
+        HashSet<Integer> records = typesAndRecords.get(strings[0]);
+
+        for (Integer recordId : records) {
+            int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+            File file = new File("DataFile" + fileNum);
+            RandomAccessFile datafile = new RandomAccessFile(file, "rw");
+            int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
+            int pageId = modId / Constants.RECORD_PER_PAGE;
+            int pageModId = modId % Constants.RECORD_PER_PAGE;
+            int cursor2 = pageId * Constants.PAGE_SIZE + pageModId * Constants.RECORD_SIZE;
+            byte[] recordParams = new byte[Constants.RECORD_SIZE];
+            datafile.seek(cursor2);
+            datafile.read(recordParams);
+
+            FileOutputStream outputStream = new FileOutputStream(output, true);
+            String recordSignature = new String(recordParams, "UTF-8");
+            String[] splittedParams = recordSignature.split(Constants.FIELD_DELIMETER);
+            String toWrite = "";
+            for (int i = 0;i <splittedParams.length;i++) {
+                if(i!=1) {
+                    String str = splittedParams[i];
+                    if (!str.equals("**********")) {
+                        str = str.replace(Constants.FILLER_DELIMETER, "");
+                        str = str.replace(Constants.RECORD_DELIMETER, "");
+                        toWrite += str + " ";
+
+                    }
+                }
+            }
+            toWrite = toWrite.substring(0, toWrite.length() - 1);
+            byte[] toBytes = toWrite.getBytes();
+            outputStream.write(toBytes);
+            outputStream.write("\n".getBytes());
+
+        }
     }
 
 }
