@@ -9,6 +9,7 @@ public class storageManager {
     public static File syscat;
     public static File index;
 
+    // Internal map to to store types and record keys of the records of that type
     public static HashMap<String, TreeSet<Integer>> typesAndRecords = new HashMap<String, TreeSet<Integer>>();
 
     public static void main(String[] args) throws IOException {
@@ -20,10 +21,12 @@ public class storageManager {
         syscat = new File(Constants.SYS_CAT_FILE);
         index = new File(Constants.INDEX_FILE);
         File outputFile = new File(Constants.OUTPUT_FILE);
+        //if this is the first time the program is runned, it creates index file and syscat file
         if (!syscat.exists()) {
             syscat.createNewFile();
             index.createNewFile();
         } else {
+            //If an old index file exists, it reads and stores it
             getExistingTypes();
             outputFile.delete();
 
@@ -31,9 +34,11 @@ public class storageManager {
         outputFile.createNewFile();
         getCommands(commandList);
         executeCommands(commandList, syscat, outputFile);
+        //save the types and records into index file
         saveToIndexFile();
     }
 
+    //If a previous index file exists, we restore it back
     public static void getExistingTypes() throws IOException {
         File index = new File(Constants.INDEX_FILE);
         Scanner sc = new Scanner(index);
@@ -59,7 +64,7 @@ public class storageManager {
 
     }
 
-    // cat-123-124-125#balık-3-4-5-6#
+    // At the end of the program we save the types and keys of records of that type into index file for further use
     public static void saveToIndexFile() throws IOException {
         File index = new File(Constants.INDEX_FILE);
         FileOutputStream outputStream = new FileOutputStream(index, false);
@@ -67,8 +72,10 @@ public class storageManager {
         for (String key : typesAndRecords.keySet()) {
             String typeSignature = key;
             for (Integer recId : typesAndRecords.get(key)) {
+                // Field delimeter
                 typeSignature += "-" + String.valueOf(recId);
             }
+            // record delimeter
             typeSignature += "#";
             toWrite += typeSignature;
         }
@@ -77,11 +84,11 @@ public class storageManager {
         outputStream.close();
     }
 
+    //Parse the input file
     public static void getCommands(ArrayList<HashMap<String, String[]>> commandList) throws IOException {
         File inputFile = new File(Constants.INPUT_FILE);
         Scanner sc = new Scanner(inputFile);
         int commandCount = 0;
-        // < create type : jıjıj,jıskjsı>, < delete : jıoxsk xj>
         ArrayList<String> ss = new ArrayList<>();
         while (sc.hasNextLine()) {
             ss.add(sc.nextLine());
@@ -133,12 +140,18 @@ public class storageManager {
                 }
             }
         }
-          }
+        //To delete the trailing new line
+        RandomAccessFile rd = new RandomAccessFile(output, "rw");
+        rd.setLength(rd.length() - ("\n".getBytes()).length);
+        rd.close();
+
+    }
 
 
     public static void createType(String[] params, File syscat) throws IOException {
         String typeSignature = "";
         for (int i = 0; i < params.length; i++) {
+            // To keep the record size fixed, if number of fields is less than 10 we add filler delimiter(*) to make it 2 bytes
             if (i == 1) {
                 String str = params[i];
                 if (str.length() == 1) {
@@ -152,13 +165,14 @@ public class storageManager {
                 for (int j = str.length(); j < Constants.FIELD_VAL; j++) {
                     str += Constants.FILLER_DELIMETER;
                 }
-                if(i==11){
+                if (i == 11) {
                     typeSignature += str;
-                }else {
+                } else {
                     typeSignature += str + Constants.FIELD_DELIMETER;
                 }
             }
         }
+        // If number of fields are less than 10, we fill the rest with a 10 char-length string.
         for (int i = params.length; i < Constants.NUM_OF_FIELDS + 2; i++) {
             typeSignature += "**********";
             if (i != 11) {
@@ -191,12 +205,14 @@ public class storageManager {
         int cursor = 0;
         int line = Constants.TYPE_SIZE;
         long pageNum = syscatlen / pageByte + 1;
+        // We read the syscat page by page to find the type name
         for (int j = 0; j < pageNum; j++) {
             for (int i = 0; i < 20; i++) {
                 rd.seek(cursor);
                 rd.read(bArray);
                 String newString = new String(bArray);
                 if (newString.substring(0, typeName.length()).equals(typeName)) {
+                    // If we find it, we replace the type name we want to delete with the last type in the syscat.
                     if (cursor != (int) filesize - line) {
                         cursor = (int) filesize - line;
                         rd.seek(cursor);
@@ -207,6 +223,7 @@ public class storageManager {
                         rd.write(lastLine);
                         rd.setLength(rd.length() - line);
                     } else {
+                        // If it is already the last type, we simply shorten the length of syscat
                         rd.setLength(rd.length() - line);
                     }
                     break;
@@ -217,10 +234,10 @@ public class storageManager {
 
         }
         rd.close();
-//TODO: BURASI
-        if(records== null){
+        if (records == null) {
             return;
         }
+        // From the index file, we take the keys of the records of that type and delete them
         for (Integer recordId : records) {
             int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
             File file = new File("DataFile" + fileNum);
@@ -243,13 +260,12 @@ public class storageManager {
 
             int cursor3 = Constants.PAGE_SIZE - 3;
             datafile.seek(cursor3);
-
+//Decrement the number of records in the file by one
             if (recordC >= 1 && recordC <= 9) {
                 String newRec = "00" + String.valueOf(recordC);
                 recordCount = newRec.getBytes();
                 datafile.write(recordCount);
                 datafile.close();
-
 
 
             } else if (recordC >= 10 && recordC <= 99) {
@@ -269,8 +285,6 @@ public class storageManager {
             } else {
                 datafile.close();
                 file.delete();
-                System.out.println(file.getName() );
-                System.out.println(file.exists());
             }
         }
         typesAndRecords.remove(typeName);
@@ -287,23 +301,26 @@ public class storageManager {
         int line = Constants.TYPE_SIZE;
         long pageNum = syscatlen / pageByte + 1;
         HashSet<String> aset = new HashSet<>();
+        //We read the syscat page by page and read the type names
         for (int j = 0; j < pageNum; j++) {
             for (int i = 0; i < 20; i++) {
-                if(cursor > syscatlen){
+                if (cursor > syscatlen) {
                     break;
                 }
                 rd.seek(cursor);
                 rd.read(typeName);
                 String newString = new String(typeName);
                 String newTypeName = newString.substring(0, Constants.FIELD_VAL);
-                newTypeName = newTypeName.replace("*","");
+                newTypeName = newTypeName.replace("*", "");
                 aset.add(newTypeName);
-                cursor = (i+1) *line + j*Constants.PAGE_SIZE;
+                cursor = (i + 1) * line + j * Constants.PAGE_SIZE;
 
             }
         }
         rd.close();
-
+        if (aset.isEmpty()) {
+            return;
+        }
         FileOutputStream outputStream = new FileOutputStream(output, true);
         ArrayList<String> aList = new ArrayList<>(aset);
         Collections.sort(aList);
@@ -320,6 +337,7 @@ public class storageManager {
     public static void createRecord(String[] params) throws IOException {
         int recordId = Integer.valueOf(params[1]);
         String recordSignature = "";
+        // We make the necessary additions to keep the record size fixed by adding special delimiters.
         for (int i = 1; i < params.length; i++) {
             String str = params[i];
             for (int j = str.length(); j < Constants.FIELD_VAL; j++) {
@@ -346,6 +364,7 @@ public class storageManager {
         boolean newlyCreated = !file.exists();
 
         RandomAccessFile datafile = new RandomAccessFile(file, "rw");
+        // We calculate the address of the record according to its key. Please refer to project report for further info.
         int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
         int pageId = modId / Constants.RECORD_PER_PAGE;
         int pageModId = modId % Constants.RECORD_PER_PAGE;
@@ -353,7 +372,7 @@ public class storageManager {
         datafile.seek(cursor);
         byte[] recordBytes = recordSignature.getBytes();
         datafile.write(recordBytes);
-
+// If thats the first record in the file, we set the number of records in the file to 1
         if (newlyCreated) {
             String numOfrecords = "001";
             byte[] recordCount = numOfrecords.getBytes();
@@ -361,6 +380,7 @@ public class storageManager {
             datafile.seek(cursor);
             datafile.write(recordCount);
         } else {
+            // Else, we increment the record count by 1
             int cursor2 = Constants.PAGE_SIZE - 3;
             byte[] recordCount = new byte[3];
             datafile.seek(cursor2);
@@ -397,6 +417,7 @@ public class storageManager {
     }
 
     public static void deleteRecord(String[] strings) throws IOException {
+        // Calculate teh address
         int recordId = Integer.valueOf(strings[1]);
         int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
         File file = new File("DataFile" + fileNum);
@@ -409,7 +430,7 @@ public class storageManager {
         datafile.seek(cursor2);
         datafile.write(emptyMarker);
 
-
+// Decrement the record count in the file
         cursor2 = Constants.PAGE_SIZE - 3;
         byte[] recordCount = new byte[3];
         datafile.seek(cursor2);
@@ -427,7 +448,6 @@ public class storageManager {
             datafile.close();
 
 
-
         } else if (recordC >= 10 && recordC <= 99) {
             String newRec = "0" + String.valueOf(recordC);
             recordCount = newRec.getBytes();
@@ -443,17 +463,17 @@ public class storageManager {
 
 
         } else {
+            // If record count is 0, delete the file
             datafile.close();
             file.delete();
         }
-        //TODO: BAK BUNA
         typesAndRecords.get(strings[0]).remove(recordId);
 
 
     }
 
     public static void updateRecord(String[] params) throws IOException {
-
+// Make the modifications for fixed size
         int recordId = Integer.valueOf(params[1]);
         String recordSignature = "";
         for (int i = 1; i < params.length; i++) {
@@ -476,7 +496,7 @@ public class storageManager {
             }
         }
         recordSignature += Constants.RECORD_DELIMETER;
-
+// Calculate the address
         int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
         File file = new File("DataFile" + fileNum);
         RandomAccessFile datafile = new RandomAccessFile(file, "rw");
@@ -496,6 +516,11 @@ public class storageManager {
         int recordId = Integer.valueOf(strings[1]);
         int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
         File file = new File("DataFile" + fileNum);
+        if (!file.exists()) {
+            file.delete();
+            return;
+        }
+        // Calculate the adress
         RandomAccessFile datafile = new RandomAccessFile(file, "rw");
         int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
         int pageId = modId / Constants.RECORD_PER_PAGE;
@@ -505,13 +530,12 @@ public class storageManager {
         datafile.seek(cursor);
         datafile.read(recordParams);
         datafile.close();
-        FileOutputStream outputStream = new FileOutputStream(output, true);
         String recordSignature = new String(recordParams, "UTF-8"); // for UTF-8 encoding
+        // Split the string by field delimiter
         String[] splittedParams = recordSignature.split(Constants.FIELD_DELIMETER);
         String toWrite = "";
         for (int i = 0; i < splittedParams.length; i++) {
             if (splittedParams[i].equals("0")) {
-                outputStream.close();
                 return;
             }
             if (i != 1) {
@@ -524,6 +548,7 @@ public class storageManager {
                 }
             }
         }
+        FileOutputStream outputStream = new FileOutputStream(output, true);
         toWrite = toWrite.substring(0, toWrite.length() - 1);
         byte[] toBytes = toWrite.getBytes();
         outputStream.write(toBytes);
@@ -534,13 +559,17 @@ public class storageManager {
 
     public static void listAllRecords(String[] strings, File output) throws IOException {
         TreeSet<Integer> records = typesAndRecords.get(strings[0]);
-if (records==null){
-    return;
-}
+        if (records == null) {
+            return;
+        }
+        if (records.isEmpty()) {
+            return;
+        }
         for (Integer recordId : records) {
             int fileNum = recordId / (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
             File file = new File("DataFile" + fileNum);
             RandomAccessFile datafile = new RandomAccessFile(file, "rw");
+            // Calculate the address
             int modId = recordId % (Constants.PAGE_PER_FILE * Constants.RECORD_PER_PAGE);
             int pageId = modId / Constants.RECORD_PER_PAGE;
             int pageModId = modId % Constants.RECORD_PER_PAGE;
@@ -551,6 +580,7 @@ if (records==null){
 
             FileOutputStream outputStream = new FileOutputStream(output, true);
             String recordSignature = new String(recordParams, "UTF-8");
+            // Split the string by field delimeter
             String[] splittedParams = recordSignature.split(Constants.FIELD_DELIMETER);
             String toWrite = "";
             for (int i = 0; i < splittedParams.length; i++) {
